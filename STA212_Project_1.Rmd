@@ -1,0 +1,347 @@
+---
+title: |
+  | \vspace{5cm} \textbf{\LARGE{Project 1}}
+author: "Frank Liu & David Qu"
+date: "Apr 10, 2020"
+output: pdf_document
+---
+\pagebreak
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,include=FALSE}
+library(corrplot)
+library(RColorBrewer)
+library(leaps)
+library(faraway)
+```
+
+# Abstract
+The goal of this project is to analyze and build a model for the prediction of the box office of certain movies by using several predictors. We remove the predictors that cannot be used and that are insignificant, clean not available data, transform some of the variables, check for multicolliearity, adjust levels of several categorical data, and change several numeric variables to categorical variables to get a rough model. We use both Best Subset Selection and Nested-F test to finalize our model. And our model is shown as following:
+
+$\hat{logGross}=-1.76934+1.00372\times logVoted+0.21554\times logUserReviews+0.36638\times logBudget+0.74854\times imdb_score-0.07079\times imdb_score^2-0.20929\times AspectRatio2.35above+0.41048\times ratingPG-0.49100 \times ratingR+1.11785\times GenresDocumentary+0.76935\times GenresHorror+0.27583\times GenresOther-1.08641\times LanguageNonEnglish+0.62023\times Countryyes-0.03972\times logCriticReviews:logVoted+0.04874\times logCriticReviews$
+
+Conclusion: Although this model has a high $R^2_{adj}$ of 0.6365, it fails to achieve the assumption of constant variance and normality of residuals. We should be careful to use this model to predict the box office of movies, but it provides us certain insights about movie-related datasets.
+
+# Data Cleaning
+
+Firstly, log transformation is applied to our response variable, gross. This is because the scale of the data is so large, and it can only take positive values. Typically we will log the response variables if it is money. \ 
+
+We then removed 7 predictors, including director_name, actor_1_name, actor_2_name, actor_3_name, plot_keywords, movie_imdb_link, movie_title. We removed movie title and imdb link because each film has unique title and link, so it could not be a explanatory variable. We also removed the names of directors and actors. Although the famous directors or actors may effect the box office, we have too many different names in this variable. We removed plot keywords with a similar reason. Most films have different keywords. If we do not remove them, we will be having thousands levels of categorical variables, which will make our analysis super complicated. \ 
+
+We removed all the individuals with missing data. And we also removed a single data point which also contains missing information. There are only 3753 objects in our new dataset. Comparing to 4674 objects in original dataset, there are 921 data points with missing information (N/A). \ 
+
+```{r,include=FALSE}
+Movie <- read.csv("Movie.csv")
+Movie$gross <- log(Movie$gross)
+colnames(Movie)[9] <- "logGross"
+movie<- Movie[, - c(2,7,11,12,15,17,18)]
+movie <- na.omit(movie)
+movie <- movie[-c(3738),]
+```
+
+# Exploratory Data Analysis
+
+## Categorical Variables:
+
+```{r,include=FALSE}
+table(movie$content_rating)
+rating=c(1:length(movie$content_rating))
+for (i in 1:length(movie$content_rating)){
+  if (movie$content_rating[i]=="PG") {
+    rating[i]="PG"
+  }else if (movie$content_rating[i]=="PG-13"){
+    rating[i]="PG-13"
+  }else if (movie$content_rating[i]=="R"){
+    rating[i]="R"
+  }else {
+    rating[i]="Other"
+  }
+}
+movie <- data.frame(movie, rating)
+
+table(movie$color)
+
+table(movie$genres)
+Genres=c(1:length(movie$genres))
+for (i in 1:length(movie$genres)){
+  if (movie$genres[i]=="Action") {
+    Genres[i]="Action"
+  }else if (movie$genres[i]=="Adventure"){
+    Genres[i]="Adventure"
+  }else if (movie$genres[i]=="Animation"){
+    Genres[i]="Animation"
+  }else if (movie$genres[i]=="Biography"){
+    Genres[i]="Biography"
+  }else if (movie$genres[i]=="Comedy"){
+    Genres[i]="Comedy"
+  }else if (movie$genres[i]=="Crime"){
+    Genres[i]="Crime"
+  }else if (movie$genres[i]=="Documentary"){
+    Genres[i]="Documentary"
+  }else if (movie$genres[i]=="Drama"){
+    Genres[i]="Drama"
+  }else if (movie$genres[i]=="Fantasy"){
+    Genres[i]="Fantasy"
+  }else if (movie$genres[i]=="Horror"){
+    Genres[i]="Horror"
+  }else {
+    Genres[i]="Mystery"
+  }
+}
+movie <- data.frame(movie, Genres)
+
+table(movie$language)
+Language <- ifelse(movie$language=="English","English","Non-English")
+movie <- data.frame(movie, Language)
+
+table(movie$country)
+Country <- ifelse(movie$country=="USA","yes","no")
+movie <- data.frame(movie, Country)
+```
+
+We have five categorical variables in our data, but some of the categorical variables have levels with only few data points. We consider this has the potential of over-fitting (tuning the model to suit a few data points). Therefore, we consider to ignore or combine some particular levels. \ 
+
+Content Rating: Most of the data points are PG, PG-13, R. They are also three standard levels of MPAA rating system. Therefore, we combine G and the rest of levels to "Others". Color: Although the majority of data points are "color", the "black and white" still has more than 100 data points. Therefore, we are trying to save this variable. Genres: There are multiple levels for this variable. However, the data points are distributed in all levels evenly. Therefore, we do not change the level for this categorical variable. Language: There are many languages in this data set, but roughly above 90% of them are "English". Instead of using each language as a level of predictor variable, we want an indicator variable for English. We create a binary variable that takes on the value "English" for English movies and "Non-English" for other languages. Country: This variable is similar to language. Most of the films are made in USA. Therefore, we create a binary variable that takes on the value "USA" for American movies and "Foreign" for movies made in other countries. \ 
+
+```{r,echo=FALSE,fig.asp=0.5}
+par(mfrow=c(2,3))
+plot(movie$rating,movie$logGross,xlab="rating",ylab="logGross")
+plot(movie$color,movie$logGross,xlab="color",ylab="logGross")
+plot(movie$Genres,movie$logGross,xlab="Genres",ylab="logGross")
+plot(movie$Language,movie$logGross,xlab="Language",ylab="logGross")
+plot(movie$Country,movie$logGross,xlab="CountryUSA",ylab="logGross")
+```
+
+After plotting the categorical variables against the response variable, response variable values seem to be considerably different for different levels of each predictor, this is a good indication that this categorical variables may be an important predictor to consider. We will not delete any categorical variable. Also, note that all USA films speak English, so Language and Country might be strongly correlated. We decide to add an interaction between these two variables.\ 
+
+## Numerical Variables:
+
+### Visualization and Transformation
+
+```{r,include=FALSE}
+logCriticReviews <- log(movie$num_critic_for_reviews)
+movie <- data.frame(movie, logCriticReviews)
+logVoted <- log(movie$num_voted_users)
+movie <- data.frame(movie, logVoted)
+logCastlikes <- log(movie$cast_total_facebook_likes)
+movie <- data.frame(movie, logCastlikes)
+logUserReviews <- log(movie$num_user_for_review)
+movie <- data.frame(movie, logUserReviews)
+logBudget <- log(movie$budget)
+movie <- data.frame(movie, logBudget)
+
+AspectRatio=c(1:length(movie$aspect_ratio))
+AspectRatio <- ifelse(movie$aspect_ratio>=2.35,"2.35 and above","<2.35")
+movie <- data.frame(movie, AspectRatio)
+
+Facenumber=c(1:length(movie$facenumber_in_poster))
+for (i in 1:length(movie$facenumber_in_poster)){
+  if (movie$facenumber_in_poster[i]==0) {
+    Facenumber[i]="0"
+  }else if ((movie$facenumber_in_poster[i]>=1)&(movie$facenumber_in_poster[i]<=3)){
+    Facenumber[i]="1-3"
+  }else {
+    Facenumber[i]=">3"
+  }
+}
+movie <- data.frame(movie, Facenumber)
+
+Movielikes=c(1:length(movie$movie_facebook_likes))
+for (i in 1:length(movie$movie_facebook_likes)){
+  if (movie$movie_facebook_likes[i]==0) {
+    Movielikes[i]="0"
+  }else if (movie$movie_facebook_likes[i]>=10000){
+    Movielikes[i]="High"
+  }else {
+    Movielikes[i]="Low"
+  }
+}
+movie <- data.frame(movie, Movielikes)
+
+Directorlikes=c(1:length(movie$director_facebook_likes))
+for (i in 1:length(movie$director_facebook_likes)){
+  if (movie$director_facebook_likes[i]==0) {
+    Directorlikes[i]="0"
+  }else if (movie$director_facebook_likes[i]>=500){
+    Directorlikes[i]="High"
+  }else {
+    Directorlikes[i]="Low"
+  }
+}
+movie <- data.frame(movie, Directorlikes)
+```
+
+```{r, echo=FALSE, out.width = "250px"}
+knitr::include_graphics("R2.png")
+```
+
+After plotting very explanatory variable with different transformation, we decide to delete the year variable, because it has a negative adjusted R^2 for all different kinds of transformation we try. It means it makes the model even worse if we add this variable. \ 
+
+Also, we decide to delete all the variables related to facebook likes except the cast total facebook likes, director_facebook_likes, and movie facebook likes, and there are several reasons. First, these variables are likely to be correlated with each other. It is intuitive that the cast total face book likes is the sum of all the facebook likes of the actors. Second, we observed a great amount data points with missing information, which means, the number of their facebook likes is 0. Although the cast total facebook likes only has one data point is 0, other variables have hundreds or thousands of 0. This greatly effects our regression and it will cost us too much to remove all these data points. So we either remove it or convert it to a categorical variable.\ 
+
+```{r,echo=FALSE, fig.asp=0.55}
+par(mfrow=c(2,3))
+plot(x = movie$num_critic_for_reviews, y = movie$logGross, xlab = "numCriticForReviews", ylab = "logGross")
+plot(x = movie$logCriticReviews, y = movie$logGross, xlab = "LOGnumCriticForReviews", ylab = "logGross")
+plot(x = movie$num_voted_users, y = movie$logGross, xlab = "numVotedUsers", ylab = "logGross")
+plot(x = movie$logVoted, y = movie$logGross, xlab = "LOGnumVotedUsers", ylab = "logGross")
+plot(x = movie$budget, y = movie$logGross, xlab = "budget", ylab = "logGross")
+plot(x = log(movie$budget), y = movie$logGross, xlab = "LOGbudget", ylab = "logGross")
+```
+
+As we visualized it in our graph above, we decide to apply log transformation to number_critic_for_reviews, num_voted_users, cast_total_facebook_likes, num_user_for_reviews, and budget, because they all have the highest $R^2_{adj}$ for log transformation.\ 
+
+We decide to apply polynomial transformation to duration and imdb_score, because they have the highest $R^2_{adj}$ for polynomial transformation.\ 
+
+For aspect_ratio, facenumber_in_poster, director_facebook_likes and movie_facebook_likes, we decide to convert these variables to categorical. We convert director_facebook_likes and movie_facebook_likes because it has lots of missing data for old movies. Therefore, we will divide it into three levels, which are none, low, and high. We convert the other two because most films have the same numerical value.\ \ 
+
+### Multicolliearity
+
+```{r,echo=FALSE, fig.asp = .35}
+M <- cor(movie[,c(3,19,29,26,27,28,30)])
+corrplot.mixed(M,tl.cex = .35,tl.col = "black")
+```
+
+We set our multicollinearity cutoff to 0.6. We found a large correlation between logVoted, logCriticReviews, and logUserReviews. Therefore, we assume that there exists multicollinearity, and we add interaction terms between these variables. Therefore, our final rough model contains 16 variables: imdb_score, duration, AspectRatio, Facenumber, Movielikes, Directorlikes, rating, color, genres, Language, Country, logCriticReviews, logVoted, logCastlikes, logUserReviews, Budget (35 predictors including levels and interaction). \ 
+
+### Outliers
+
+```{r,echo=FALSE}
+m1 <- lm(logGross~logCriticReviews, data = movie)
+m2 <- lm(logGross~logVoted, data = movie)
+m3 <- lm(logGross~logCastlikes, data = movie)
+m4 <- lm(logGross~logUserReviews, data = movie)
+m5 <- lm(logGross~logBudget, data = movie)
+m6 <- lm(logGross~imdb_score+I(imdb_score^2), data = movie)
+m7 <- lm(logGross~duration+I(duration^2), data = movie)
+a<-which(((m1$residuals/sd(m1$residuals)>3) | (m1$residuals/sd(m1$residuals) < -3))&((m2$residuals/sd(m2$residuals)>3) | (m2$residuals/sd(m2$residuals) < -3))&((m3$residuals/sd(m3$residuals)>3) | (m3$residuals/sd(m3$residuals) < -3))&((m4$residuals/sd(m4$residuals)>3) | (m4$residuals/sd(m4$residuals) < -3))&((m5$residuals/sd(m5$residuals)>3) | (m5$residuals/sd(m5$residuals) < -3))&((m6$residuals/sd(m6$residuals)>3) | (m6$residuals/sd(m6$residuals) < -3))&((m7$residuals/sd(m7$residuals)>3) | (m7$residuals/sd(m7$residuals) < -3)))
+```
+
+We perform the simple linear model for each of the transformed numerical variable. We found that there are 29 data points are extreme outliers. After looking at these data points, we decide to remove those data points. Most of these data points have a extremely large negative residual, which means that we over-estimate their box office. The main reason is that these films may not be made for commercial purposes, or lots of them are not even available in the cinema. For example, there are some award-wining films made by fairly famous directors with a fair amount of reviews, but the film was not liked by the majority. Also, some films are just made for online purposes. Most of these non-commercial films are inappropriate for our sample. Therefore, it is reasonable to ignore these outliers.\ 
+
+```{r,include=FALSE}
+movie <- subset(movie,(((m1$residuals/sd(m1$residuals)<3) & (m1$residuals/sd(m1$residuals) > -3))|((m2$residuals/sd(m2$residuals)<3) & (m2$residuals/sd(m2$residuals) > -3))|((m3$residuals/sd(m3$residuals)<3) & (m3$residuals/sd(m3$residuals) > -3))|((m4$residuals/sd(m4$residuals)<3) & (m4$residuals/sd(m4$residuals) > -3))|((m5$residuals/sd(m5$residuals)<3) & (m5$residuals/sd(m5$residuals) > -3))|((m6$residuals/sd(m6$residuals)<3) & (m6$residuals/sd(m6$residuals) > -3))|((m7$residuals/sd(m7$residuals)<3) & (m7$residuals/sd(m7$residuals) > -3))))
+```
+
+# Model Selection
+
+In this process, we refine our model and decide final variables to put in our model. We apply the technique of best subset selection (BSS). We fit a separate least squares regression for every subset of predictors. We then look at all of the models, and use some metric to choose among them. We have 35 predictors in total, we build every possible model with these predictors. \ 
+
+```{r,echo=FALSE,fig.asp=0.5}
+BSS <- regsubsets(logGross~logCriticReviews+logVoted+logCastlikes+logUserReviews+logBudget+imdb_score+I(imdb_score^2)+duration+I(duration^2)+AspectRatio+Facenumber+Movielikes+Directorlikes+rating+color+Genres+Language+Country+Language:Country+logCriticReviews:logVoted+logCriticReviews:logUserReviews, data=movie, nvmax=40)
+plot(BSS,scale = "adjr2")
+```
+
+We look at the models with highest $R^2_{adj}$. However, the graph tells us that there are tons of models with similar $R^2_{adj}$. Since a smaller model is easier to interpret, we will look at those high $R^2_{adj}$ models with less predictors. We will compare 4 smallest models with a $R^2_{adj}$ higher than 0.63.\ 
+
+```{r,include=FALSE}
+coef(BSS,11)
+coef(BSS,12)
+coef(BSS,13)
+coef(BSS,14)
+```
+
+```{r,include=FALSE}
+rating2=c(1:length(movie$content_rating))
+for (i in 1:length(movie$content_rating)){
+  if (movie$content_rating[i]=="PG") {
+    rating2[i]="PG"
+  }else if (movie$content_rating[i]=="R"){
+    rating2[i]="R"
+  }else {
+    rating2[i]="Other"
+  }
+}
+movie <- data.frame(movie, rating2)
+
+m1 <- lm(logGross~ logVoted+logBudget+imdb_score+I(imdb_score^2)+AspectRatio+rating2+Language+Country+logCriticReviews:logVoted+logCriticReviews:logUserReviews+logCriticReviews+logUserReviews,data = movie)
+
+Genres2=c(1:length(movie$genres))
+for (i in 1:length(movie$genres)){
+  if (movie$genres[i]=="Horror") {
+    Genres2[i]="Horror"
+  }else {
+    Genres2[i]="Other"
+  }
+}
+movie <- data.frame(movie, Genres2)
+
+m2 <- lm(logGross~ logVoted+logUserReviews+logBudget+imdb_score+I(imdb_score^2)+AspectRatio+rating2+Genres2+Language+Country+logCriticReviews:logVoted+logCriticReviews,data = movie)
+
+Genres3=c(1:length(movie$genres))
+for (i in 1:length(movie$genres)){
+  if (movie$genres[i]=="Documentary") {
+    Genres3[i]="Documentary"
+  }else if (movie$genres[i]=="Horror"){
+    Genres3[i]="Horror"
+  }else {
+    Genres3[i]="Other"
+  }
+}
+movie <- data.frame(movie, Genres3)
+
+
+m3 <- lm(logGross~ logVoted+logUserReviews+logBudget+imdb_score+I(imdb_score^2)+AspectRatio+rating2+Genres3+Language+Country+logCriticReviews:logVoted+logCriticReviews,data = movie)
+
+Genres4=c(1:length(movie$genres))
+for (i in 1:length(movie$genres)){
+  if (movie$genres[i]=="Documentary") {
+    Genres4[i]="Documentary"
+  }else if (movie$genres[i]=="Horror"){
+    Genres4[i]="Horror"
+  }else if (movie$genres[i]=="Crime"){
+    Genres4[i]="Crime"
+  }else {
+    Genres4[i]="Other"
+  }
+}
+movie <- data.frame(movie, Genres4)
+
+m4 <- lm(logGross~ logVoted+logUserReviews+logBudget+imdb_score+I(imdb_score^2)+AspectRatio+rating2+Genres4+Language+Country+logCriticReviews+logCriticReviews:logVoted,data = movie)
+```
+
+```{r,echo=FALSE}
+anova(m2,m3,m4)
+```
+
+The smallest model has 11 predictors. However, since is has an interaction term, we have to add the original variable back. Therefore, we have 13 variables in total. The best model with 12 variables also has an interaction term, so it has 13 variables. By looking at the p-values of their predictors, we found that many predictors for the first model lacks evidence to be significant. Therefore, we decide to choose the second model. By applying anova analysis, we found that the model with 15 predictors is better, because the additional predictors add a non-zero $R^2_{adj}$ to the model. Although the increase in $R^2_{adj}$ is not high, we still want to add these predictors because they are the levels for genres. We think if we make a level with a small amount of data points to be indicator could result in over-fitting. However, it is possible they have some strong attributes that makes them very different. We should either treat them as outliers or put other levels in our model. Therefore, we will choose the largest model, which has 15 predictors. Hence, our final model is \ 
+
+$\hat{logGross}=-1.76934+1.00372\times logVoted+0.21554\times logUserReviews+0.36638\times logBudget+0.74854\times imdb_score-0.07079\times imdb_score^2-0.20929\times AspectRatio2.35above+0.41048\times ratingPG-0.49100 \times ratingR+1.11785\times GenresDocumentary+0.76935\times GenresHorror+0.27583\times GenresOther-1.08641\times LanguageNonEnglish+0.62023\times Countryyes-0.03972\times logCriticReviews:logVoted+0.04874\times logCriticReviews$
+
+```{r, echo=FALSE, out.width = "150px"}
+knitr::include_graphics("summary.png")
+```
+
+The baseline for rating is other; the baseline for Genres is Crime; the baseline for Language is English; the baseline for Country is no (Non-USA). The $R^2_{adj}$ is 0.6365.\ 
+
+```{r,echo=FALSE,fig.asp=0.4}
+par(mfrow=c(1,2))
+plot(m4$residuals~m4$fitted.values, xlab = "Fitted Values", ylab = "Residuals")
+abline(h=0,lty=3)
+qqnorm(m4$residuals)
+qqline(m4$residuals)
+```
+
+# Conditions for Inference
+
+Now we have selected our final model, which is the largest model that have 15 predictors. We are now going to check the conditions of inference to see if additional transformation was needed. \ 
+
+Linearity: We have made scatter plots for response variables and each numeric variables that are in our model. Each explanatory variables are linearly related to the response variable.\ 
+
+Zero Mean: The mean of residuals is almost zero, which means we meet the condition of zero mean.\ 
+
+Constant Variance: By seeing from the graph, we can see that the data is more spread out in the beginning and start to crowd together as fitted value increases. We don't meet the condition for this inference, and probably this is due to the diverge range of data point when the log gross is ow.\ 
+
+Normality: By seeing from our qqplot, we can conclude that the assumption of normality is not achieved.The residuals follow a bell-shape distribution, but is heavily skewed to the left. \ 
+
+Independence and Randomness: This dataset is movies in the US released from 1916 to 2016, it is safe to assume this is a random sample and the residuals are independent from one another.
+
+# Analysis
+
+After deciding our final model, we find that our response variable, logGross, is related to log number voted, log user reviews, log budget, imdb score, the square of imdb score, aspect ratio, movie rating, genres, country, language, and log critic reviews. In particular, an aspect ratio of 2.35 and above, a rating of R and other, the square of imdb score, the language of non-English has a negative correlation with the total box office. The rest of variables relate to a higher box office. It is interesting that a high imdb score doesn’t actually guarantee the box office, because a great amount of good movies are not made for commercial purposes. It is counter-intuitive that the aspect ratio of 2.35 and above has a negative correlation, because people should prefer a wider screen. I think this categorical variable is likely to be correlated with some numerical variable. Likewise, documentary has a large positive correlation, but we can see from previous plot that these films actually have a lower box office than average. These categorical variables probably contain multicollinearity with other numerical variables. Some other predictors match with our intuition. For example, an R-rated movie often has a lower box office; the popularity of a film (number voted and user reviews) is positively correlated with the box office. \ 
+
+Although our model has a high $R^2_{adj}$ of 0.6365, I still think it is not a perfect model and we have to be careful to make any conclusion, because we fail to match all the conditions of linear regression. We’ve observed that the variance of residuals is higher for films with lower box office. I think this divergence of low box office films could be explained by intuition. There are lots of non-commercial films in this dataset, which has a huge influence on our final model. These films probably are not available in cinema, but they could be famous award-winning films in festivals like Cannes or Venice. This means we need more predictors. For example, the information about the film’s presence in a particular film festival could be helpful. There could also be films with extremely low budget and popularity yet achieving a high box office. For example, some independence films like *The Purge* could be favored by the public. I think a variable about the release date will be helpful because lots of high box office films are released during summer. The cinema schedule and the film’s marketing campaign could be influential as well. The premiere of a film is very important to their first-week box office. Therefore, there are many potentially useful variables.\ 
+
